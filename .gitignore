@@ -1,0 +1,9 @@
+# Supabase
+supabase/.temp
+supabase/db/volumes
+
+# Node (para o futuro frontend)
+node_modules
+
+# Env
+.env.local
