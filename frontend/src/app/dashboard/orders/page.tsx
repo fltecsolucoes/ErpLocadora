@@ -5,6 +5,7 @@ import { getOrders, getQuotesForConversion, convertToOS } from './actions'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import Link from 'next/link';
 // Adicione esta linha junto aos outros imports
 import ConversionButtonClient from './conversion-button-client';
 import { Database } from '@/lib/database.types'
@@ -142,7 +143,9 @@ export default async function OrdersPage() {
                                         <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{new Date(o.created_at).toLocaleDateString('pt-BR')}</td>
                                         <td className="px-4 py-2 whitespace-nowrap text-sm">
                                             {/* Futuro: Botão de Detalhes ou Check-in/Check-out */}
-                                            <button className="text-indigo-600 hover:text-indigo-900 text-xs">Detalhes</button>
+                                            <Link href={`/dashboard/orders/${o.id}`} className="text-indigo-600 hover:text-indigo-900 text-xs">
+    Detalhes
+</Link>
                                         </td>
                                     </tr>
                                 ))}
