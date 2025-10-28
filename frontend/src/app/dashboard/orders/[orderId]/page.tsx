@@ -41,7 +41,7 @@ export default async function OrderDetailsPage({ params }: { params: { orderId: 
     // 2. BUSCA DE DADOS (OS + Pagamentos)
     const [order, payments] = await Promise.all([
         getOrderDetails(orderId), // Busca detalhes da OS
-        getOrderPayments(orderId) as PaymentRow[] // Busca pagamentos
+        getOrderPayments(orderId) // Busca pagamentos (o await já resolve a Promise)
     ]);
 
     // 3. Tratamento se a OS não for encontrada
@@ -55,7 +55,11 @@ export default async function OrderDetailsPage({ params }: { params: { orderId: 
     }
     
     // --- CALCULAR totalValue AQUI (fora da action) ---
-    const totalValue = order.order_items.reduce((sum, item) => sum + (parseFloat(item.unit_price as string || '0') * item.quantity), 0);
+    const totalValue = order.order_items.reduce((sum, item) => {
+  // Usa o valor numérico diretamente, tratando 'null' como 0
+  const price = item.unit_price ?? 0; 
+  return sum + (price * item.quantity);
+}, 0);
 
     // --- SERVER ACTION MODIFICADA (aceita totalValue) ---
     const handleGeneratePayment = async (calculatedValue: number) => {
@@ -92,7 +96,9 @@ export default async function OrderDetailsPage({ params }: { params: { orderId: 
             <div className="flex justify-between items-center border-b pb-4 mb-6 bg-white p-4 rounded shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-800">Detalhes da OS #{order.id.substring(0, 8)}</h1>
-                    <p className="text-sm text-gray-500">Criada em: {new Date(order.created_at).toLocaleDateString('pt-BR')}</p>
+                    <p className="text-sm text-gray-500">
+                        Criada em: {order.created_at ? new Date(order.created_at).toLocaleDateString('pt-BR') : 'N/A'}
+                    </p>
                 </div>
                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusStyle(order.status)}`}>
                     Status: {order.status}

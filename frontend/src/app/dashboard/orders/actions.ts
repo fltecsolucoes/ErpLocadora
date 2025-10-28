@@ -1,16 +1,28 @@
-// src/app/dashboard/orders/actions.ts
+// src/app/dashboard/orders/actions.ts (REFEITO E CORRIGIDO)
 
 'use server'
 
 import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { revalidatePath } from 'next/cache'
 import { Database } from '@/lib/database.types'
 
-// Tipagens
+// --- TIPAGENS ---
+// Tipos base das tabelas (do Supabase)
 type QuoteRow = Database['public']['Tables']['quotes']['Row']
 type OrderRow = Database['public']['Tables']['orders']['Row']
-type ClientRow = Database['public']['Tables']['clients']['Row']
+
+// Tipo específico para o retorno da função getQuotesForConversion
+// Supabase retorna 'clients' como um array de UM objeto (ou null se não houver cliente)
+type QuoteForConversionRow = Pick<QuoteRow, 'id' | 'created_at' | 'status'> & {
+    client: { name: string }[] | null 
+}
+
+// Tipo específico para o retorno da função getOrders
+// Supabase retorna 'clients' como um array de UM objeto (ou null se não houver cliente)
+type OrderForRow = Pick<OrderRow, 'id' | 'status' | 'type' | 'created_at'> & {
+    client: { name: string }[] | null 
+};
 
 // --- HELPER: Cria o cliente Supabase no Servidor ---
 function getSupabaseServerClient() {
@@ -21,8 +33,12 @@ function getSupabaseServerClient() {
         {
             cookies: {
                 get(name: string) { return cookieStore.get(name)?.value },
-                set(name: string, value: string, options) { cookieStore.set(name, value, options) },
-                remove(name: string, value: string, options) { cookieStore.set(name, '', options) },
+                set(name: string, value: string, options: CookieOptions) { 
+                    try { cookieStore.set(name, value, options) } catch (error) {/* Ignora */} 
+                },
+                remove(name: string, options: CookieOptions) { 
+                    try { cookieStore.set(name, '', options) } catch (error) {/* Ignora */} 
+                },
             },
         }
     )
@@ -31,38 +47,35 @@ function getSupabaseServerClient() {
 // ====================================================================
 // 1. AÇÃO PARA LER ORÇAMENTOS (QUOTES) PARA CONVERSÃO
 // ====================================================================
-
-export async function getQuotesForConversion(): Promise<QuoteRow[] | []> {
+export async function getQuotesForConversion(): Promise<QuoteForConversionRow[]> { 
     const supabase = getSupabaseServerClient()
 
-    // Busca apenas orçamentos em rascunho que ainda não foram convertidos
     const { data: quotes, error } = await supabase
         .from('quotes')
         .select(`
             id,
             created_at,
             status,
-            client:clients(name) 
+            client:clients (name) 
         `)
-        .eq('status', 'Draft') // Apenas orçamentos que podem ser convertidos
+        .eq('status', 'Draft')
         .order('created_at', { ascending: false })
 
     if (error) {
         console.error('Erro ao buscar orçamentos para conversão:', error)
-        return []
+        return [] // Retorna array vazio em caso de erro
     }
-
-    return quotes as QuoteRow[]
+    // CORREÇÃO: Usamos 'as unknown' para satisfazer o TypeScript no build,
+    // mas garantimos que a estrutura da query corresponde ao tipo.
+    return quotes as unknown as QuoteForConversionRow[] 
 }
 
 // ====================================================================
 // 2. AÇÃO PARA CONVERTER ORÇAMENTO EM OS (CHAMADA RPC)
 // ====================================================================
-
 export async function convertToOS(quoteId: string) {
     const supabase = getSupabaseServerClient()
 
-    // Chama a função RPC (Fase 2) no banco de dados para conversão
     const { data: newOrderId, error } = await supabase.rpc('convert_quote_to_os', {
         p_quote_id: quoteId,
     })
@@ -72,19 +85,16 @@ export async function convertToOS(quoteId: string) {
         return { success: false, message: `Falha na conversão: ${error.message}` }
     }
     
-    // Revalida ambas as páginas para refletir a mudança
     revalidatePath('/dashboard/quotes')
     revalidatePath('/dashboard/orders')
 
-    return { success: true, message: `Orçamento convertido para OS #${newOrderId.substring(0, 8)}`, newOrderId }
+    return { success: true, message: `Orçamento convertido para OS #${(newOrderId as string).substring(0, 8)}`, newOrderId } 
 }
-
 
 // ====================================================================
 // 3. AÇÃO PARA LER (LISTAR) ORDENS DE SERVIÇO (OS)
 // ====================================================================
-
-export async function getOrders(): Promise<OrderRow[] | []> {
+export async function getOrders(): Promise<OrderForRow[]> { 
     const supabase = getSupabaseServerClient()
 
     const { data: orders, error } = await supabase
@@ -94,14 +104,14 @@ export async function getOrders(): Promise<OrderRow[] | []> {
             status,
             type,
             created_at,
-            client:clients(name)
+            client:clients (name) 
         `)
         .order('created_at', { ascending: false })
 
     if (error) {
         console.error('Erro ao buscar ordens de serviço:', error)
-        return []
+        return [] // Retorna array vazio em caso de erro
     }
-
-    return orders as OrderRow[]
+    // CORREÇÃO: Usamos 'as unknown'
+    return orders as unknown as OrderForRow[] 
 }

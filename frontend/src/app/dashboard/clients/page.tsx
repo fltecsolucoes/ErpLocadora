@@ -67,7 +67,10 @@ export default async function ClientsPage() {
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{c.name}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.document}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.email}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(c.created_at).toLocaleDateString('pt-BR')}</td>
+                                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {/* Verifica se c.created_at existe antes de formatar */}
+                                                    {c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : 'N/A'}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>

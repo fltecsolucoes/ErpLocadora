@@ -1,17 +1,21 @@
 // src/app/dashboard/orders/[orderId]/finance.actions.ts
 
+// Exemplo do TOPO CORRETO de um actions.ts
 'use server'
 
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { revalidatePath } from 'next/cache'
-import { Database } from '@/lib/database.types'
+import { cookies } from 'next/headers' // APENAS UMA VEZ
+import { createServerClient, type CookieOptions } from '@supabase/ssr' // APENAS UMA VEZ
+import { revalidatePath } from 'next/cache' // APENAS UMA VEZ (se usado)
+import { Database } from '@/lib/database.types' // APENAS UMA VEZ
+
+// ... (Restante do código, incluindo a função getSupabaseServerClient CORRETA)
 
 // Tipagem
 type PaymentRow = Database['public']['Tables']['order_payments']['Row']
 type PaymentStatus = Database['public']['Enums']['payment_status'] // Usa o Enum do DB
 
 // --- HELPER: Cria o cliente Supabase no Servidor ---
+// SUBSTITUA a função getSupabaseServerClient por esta:
 function getSupabaseServerClient() {
     const cookieStore = cookies()
     return createServerClient(
@@ -19,14 +23,23 @@ function getSupabaseServerClient() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
-                get(name: string) { return cookieStore.get(name)?.value },
-                set(name: string, value: string, options) { cookieStore.set(name, value, options) },
-                remove(name: string, options) { cookieStore.set(name, '', options) },
+                get(name: string) {
+                    return cookieStore.get(name)?.value
+                },
+                set(name: string, value: string, options: CookieOptions) { // Usa CookieOptions
+                    try { // Adiciona try/catch para Server Actions que podem ser read-only
+                      cookieStore.set(name, value, options)
+                    } catch (error) {/* Ignora erros em contextos read-only */}
+                },
+                remove(name: string, options: CookieOptions) { // Usa CookieOptions
+                    try { // Adiciona try/catch
+                      cookieStore.set(name, '', options) // Remove setando valor vazio
+                    } catch (error) {/* Ignora erros */}
+                },
             },
         }
     )
 }
-
 // ====================================================================
 // 1. AÇÃO PARA BUSCAR PAGAMENTOS DE UMA OS
 // ====================================================================

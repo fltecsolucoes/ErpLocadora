@@ -1,17 +1,19 @@
-// src/app/dashboard/quotes/actions.ts
+// src/app/dashboard/quotes/actions.ts (REFEITO E CORRIGIDO)
 
 'use server'
 
 import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+// CORREÇÃO: Importa CookieOptions
+import { createServerClient, type CookieOptions } from '@supabase/ssr' 
 import { revalidatePath } from 'next/cache'
 import { Database } from '@/lib/database.types'
 
-// --- HELPER: Tipagem e Cliente ---
+// --- TIPAGENS ---
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProductRow = Database['public']['Tables']['products']['Row']
 type QuoteRow = Database['public']['Tables']['quotes']['Row']
 
+// --- HELPER: Cria o cliente Supabase no Servidor (CORRIGIDO) ---
 function getSupabaseServerClient() {
     const cookieStore = cookies()
     return createServerClient(
@@ -19,9 +21,15 @@ function getSupabaseServerClient() {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
-                get(name: string) { return cookieStore.get(name)?.value },
-                set(name: string, value: string, options) { cookieStore.set(name, value, options) },
-                remove(name: string, value: string, options) { cookieStore.set(name, '', options) },
+                get(name: string) {
+                    return cookieStore.get(name)?.value
+                },
+                set(name: string, value: string, options: CookieOptions) { // Usa CookieOptions
+                    try { cookieStore.set(name, value, options) } catch (error) {/* Ignora */}
+                },
+                remove(name: string, options: CookieOptions) { // Usa CookieOptions
+                    try { cookieStore.set(name, '', options) } catch (error) {/* Ignora */}
+                },
             },
         }
     )
@@ -31,16 +39,24 @@ function getSupabaseServerClient() {
 // 1. AÇÃO PARA LER REQUISITOS (Clientes e Produtos)
 // ====================================================================
 
-export async function getQuoteRequirements(): Promise<{ clients: ClientRow[], products: ProductRow[] }> {
+// CORREÇÃO: Ajusta o tipo de retorno para ser mais preciso
+export async function getQuoteRequirements(): Promise<{ 
+    clients: Pick<ClientRow, 'id' | 'name'>[], 
+    products: Pick<ProductRow, 'id' | 'name' | 'rent_value' | 'total_quantity'>[] 
+}> {
     const supabase = getSupabaseServerClient()
 
-    const { data: clients } = await supabase.from('clients').select('id, name').order('name', { ascending: true })
-    const { data: products } = await supabase.from('products').select('id, name, rent_value, total_quantity').order('name', { ascending: true })
+    // Busca apenas os campos necessários para o formulário
+    const [clientsRes, productsRes] = await Promise.all([
+        supabase.from('clients').select('id, name').order('name', { ascending: true }),
+        supabase.from('products').select('id, name, rent_value, total_quantity').order('name', { ascending: true })
+    ])
+    
+    // Trata erros e retorna arrays vazios se necessário
+    const clients = clientsRes.data as Pick<ClientRow, 'id' | 'name'>[] || [];
+    const products = productsRes.data as Pick<ProductRow, 'id' | 'name' | 'rent_value' | 'total_quantity'>[] || [];
 
-    return { 
-        clients: clients as ClientRow[] || [], 
-        products: products as ProductRow[] || [] 
-    }
+    return { clients, products }
 }
 
 // ====================================================================
@@ -55,7 +71,6 @@ export async function checkAvailability(
 ) {
     const supabase = getSupabaseServerClient()
 
-    // Chama a função RPC (Fase 2) no banco de dados
     const { data: availableQuantity, error } = await supabase.rpc('get_product_availability', {
         p_product_id: productId,
         p_start_date: startDate,
@@ -67,13 +82,15 @@ export async function checkAvailability(
         return { success: false, message: 'Erro interno ao consultar estoque.' }
     }
     
-    const isAvailable = availableQuantity >= quantity
+    // Garante que availableQuantity seja um número
+    const available = typeof availableQuantity === 'number' ? availableQuantity : 0;
+    const isAvailable = available >= quantity;
     
     return { 
         success: true, 
         isAvailable, 
-        availableQuantity: availableQuantity,
-        message: isAvailable ? 'Disponível para locação.' : `Indisponível. Apenas ${availableQuantity} unidades estão livres no período.` 
+        availableQuantity: available,
+        message: isAvailable ? 'Disponível para locação.' : `Indisponível. Apenas ${available} unidades estão livres no período.` 
     }
 }
 
@@ -100,9 +117,9 @@ export async function createQuote(clientId: string, items: QuoteItem[]) {
         .select('id')
         .single()
 
-    if (quoteError) {
+    if (quoteError || !quoteData) { // Verifica se quoteData existe
         console.error('Erro ao criar cabeçalho do orçamento:', quoteError)
-        return { success: false, message: `Falha ao criar Orçamento: ${quoteError.message}` }
+        return { success: false, message: `Falha ao criar Orçamento: ${quoteError?.message || 'ID não retornado.'}` }
     }
 
     const quoteId = quoteData.id
@@ -124,9 +141,11 @@ export async function createQuote(clientId: string, items: QuoteItem[]) {
 
     if (itemsError) {
         console.error('Erro ao inserir itens do orçamento:', itemsError)
+        // Considerar deletar o 'quote' criado se os itens falharem? (Transação seria ideal)
         return { success: false, message: `Orçamento criado, mas falha ao adicionar itens: ${itemsError.message}` }
     }
 
-    revalidatePath('/dashboard/quotes')
+    revalidatePath('/dashboard/quotes') // Revalida a página de orçamentos (se existir listagem)
+    revalidatePath('/dashboard/orders') // Revalida a página de OS (para a conversão)
     return { success: true, message: `Orçamento #${quoteId.substring(0, 8)} criado com sucesso!`, quoteId }
 }

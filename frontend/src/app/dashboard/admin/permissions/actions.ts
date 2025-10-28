@@ -1,11 +1,14 @@
 // src/app/dashboard/admin/permissions/actions.ts
 
+// Exemplo do TOPO CORRETO de um actions.ts
 'use server'
 
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { revalidatePath } from 'next/cache'
-import { Database } from '@/lib/database.types'
+import { cookies } from 'next/headers' // APENAS UMA VEZ
+import { createServerClient, type CookieOptions } from '@supabase/ssr' // APENAS UMA VEZ
+import { revalidatePath } from 'next/cache' // APENAS UMA VEZ (se usado)
+import { Database } from '@/lib/database.types' // APENAS UMA VEZ
+
+// ... (Restante do código, incluindo a função getSupabaseServerClient CORRETA)
 
 // Tipagens
 type Role = Database['public']['Tables']['roles']['Row']
@@ -14,22 +17,36 @@ type RolePermission = Database['public']['Tables']['role_permissions']['Row']
 
 // --- HELPER: Cria o cliente Supabase ---
 // --- HELPER: Cria o cliente Supabase ---
+// --- Código para colocar em CADA actions.ts ---
+
+
+// SUBSTITUA a função getSupabaseServerClient por esta:
 function getSupabaseServerClient() {
     const cookieStore = cookies()
-    // SUBSTITUA o comentário por esta configuração completa:
     return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
-                get(name: string) { return cookieStore.get(name)?.value },
-                set(name: string, value: string, options) { cookieStore.set(name, value, options) },
-                remove(name: string, options) { cookieStore.set(name, '', options) },
+                get(name: string) {
+                    return cookieStore.get(name)?.value
+                },
+                set(name: string, value: string, options: CookieOptions) { // Usa CookieOptions
+                    try { // Adiciona try/catch para Server Actions que podem ser read-only
+                      cookieStore.set(name, value, options)
+                    } catch (error) {/* Ignora erros em contextos read-only */}
+                },
+                remove(name: string, options: CookieOptions) { // Usa CookieOptions
+                    try { // Adiciona try/catch
+                      cookieStore.set(name, '', options) // Remove setando valor vazio
+                    } catch (error) {/* Ignora erros */}
+                },
             },
         }
     )
 }
 
+// --- Restante do seu código actions.ts ---
 
 // ====================================================================
 // 1. AÇÃO PARA BUSCAR TODOS OS DADOS RBAC
