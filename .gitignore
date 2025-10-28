@@ -7,3 +7,4 @@ node_modules
 
 # Env
 .env.local
+frontend/src/lib/database.types.ts
