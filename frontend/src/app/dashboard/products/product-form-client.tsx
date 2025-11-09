@@ -1,9 +1,13 @@
-// src/app/dashboard/products/product-form-client.tsx
+'use client'
 
-'use client' // ISSO PERMITE O USO DE alert() E FORMA CORRETA DO FORM
-
+import React, { useState, useTransition, useRef } from 'react'
 import { createProduct } from './actions'
 import { Database } from '@/lib/database.types'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 
 type CategoryRow = Database['public']['Tables']['categories']['Row']
 
@@ -11,56 +15,88 @@ interface ProductFormProps {
     categories: CategoryRow[] | [];
 }
 
+type Status = {
+  type: 'idle' | 'loading' | 'success' | 'error';
+  message: string;
+}
+
 export default function ProductFormClient({ categories }: ProductFormProps) {
-    
-    // Função que gerencia o envio do formulário e o feedback
-    const handleFormSubmit = async (formData: FormData) => {
-        // Chama a Server Action (que roda no servidor)
-        const result = await createProduct(formData)
-        
-        // O feedback (alert) agora funciona porque este código roda no navegador
-        if (!result.success) {
-            console.error('Erro de submissão:', result.message)
-            alert(`Erro ao criar produto: ${result.message}`) 
-        } else {
-            alert(result.message) // Exibe a mensagem de sucesso
-        }
+    const [isPending, startTransition] = useTransition();
+    const [status, setStatus] = useState<Status>({ type: 'idle', message: '' });
+    const formRef = useRef<HTMLFormElement>(null);
+
+    const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+
+        startTransition(async () => {
+            setStatus({ type: 'loading', message: 'Salvando produto...' });
+            const result = await createProduct(formData);
+            
+            if (result.success) {
+                setStatus({ type: 'success', message: result.message });
+                formRef.current?.reset();
+            } else {
+                setStatus({ type: 'error', message: result.message || 'Erro ao salvar produto.' });
+            }
+        });
     }
 
     return (
-        // Usamos action={handleFormSubmit} para que a Server Action seja o alvo
-        <form action={handleFormSubmit} className="p-4 border rounded shadow-md space-y-4">
-            <h2 className="text-xl font-bold">Cadastrar Novo Produto</h2>
-            <div>
-                <label className="block text-sm font-medium">Nome</label>
-                <input name="name" required className="w-full p-2 border rounded" />
-            </div>
-            
-            <div>
-                <label className="block text-sm font-medium">Valor de Locação (R$)</label>
-                <input name="rent_value" type="number" step="0.01" required className="w-full p-2 border rounded" />
-            </div>
+        <Card>
+            <CardHeader>
+                <CardTitle>Cadastrar Novo Produto</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <form ref={formRef} onSubmit={handleFormSubmit} className="space-y-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="name">Nome do Produto</Label>
+                        <Input id="name" name="name" required />
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label htmlFor="rent_value">Valor da Diária (R$)</Label>
+                        <Input id="rent_value" name="rent_value" type="number" step="0.01" required placeholder="Ex: 25.50" />
+                    </div>
 
-            <div>
-                <label className="block text-sm font-medium">Estoque Total</label>
-                <input name="total_quantity" type="number" required className="w-full p-2 border rounded" />
-            </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="total_quantity">Estoque Total</Label>
+                        <Input id="total_quantity" name="total_quantity" type="number" required placeholder="Ex: 10" />
+                    </div>
 
-            <div>
-                <label className="block text-sm font-medium">Categoria</label>
-                <select name="category_id" required className="w-full p-2 border rounded">
-                    <option value="">Selecione uma Categoria</option>
-                    {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                            {category.name}
-                        </option>
-                    ))}
-                </select>
-            </div>
-            
-            <button type="submit" className="bg-green-600 text-white p-2 rounded hover:bg-green-700 w-full">
-                Salvar Produto
-            </button>
-        </form>
+                    <div className="space-y-2">
+                        <Label htmlFor="category_id">Categoria</Label>
+                        <select 
+                            id="category_id" 
+                            name="category_id" 
+                            required 
+                            className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <option value="">Selecione uma Categoria</option>
+                            {categories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                    {category.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    
+                    <Button type="submit" className="w-full" disabled={isPending}>
+                        {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isPending ? 'Salvando...' : 'Salvar Produto'}
+                    </Button>
+
+                    {status.type !== 'idle' && (
+                         <p className={`text-sm text-center ${
+                            status.type === 'error' ? 'text-destructive' :
+                            status.type === 'success' ? 'text-green-500' :
+                            'text-muted-foreground'
+                        }`}>
+                            {status.message}
+                        </p>
+                    )}
+                </form>
+            </CardContent>
+        </Card>
     )
 }

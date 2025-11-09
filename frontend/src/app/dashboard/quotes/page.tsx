@@ -1,16 +1,8 @@
-// src/app/dashboard/quotes/page.tsx
-
 import { getQuoteRequirements } from './actions'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-
-// Importa o componente de Cliente que criamos
 import QuoteFormClient from './quote-form-client' 
-
-// ====================================================================
-// COMPONENTE PRINCIPAL (SERVER COMPONENT)
-// ====================================================================
 
 export default async function QuotesPage() {
     // 1. Verificar autenticação
@@ -29,13 +21,15 @@ export default async function QuotesPage() {
     const initialData = await getQuoteRequirements()
 
     return (
-        <div className="p-8 space-y-8">
-            <h1 className="text-3xl font-bold mb-6">Novo Orçamento de Locação</h1>
-
-            {/* O formulário inteiro é um Client Component para gerenciar o estado */}
+        <div className="space-y-8">
+            <div>
+                <h1 className="text-3xl font-bold">Novo Orçamento</h1>
+                <p className="text-muted-foreground">Crie um novo orçamento de locação, verifique a disponibilidade de itens e finalize para um cliente.</p>
+            </div>
+            
             <QuoteFormClient initialData={initialData} />
             
-            {/* Futuramente: Listagem de Orçamentos Existentes (ListQuotesComponent) */}
+            {/* Futuramente: Listagem de Orçamentos Existentes */}
         </div>
     )
 }

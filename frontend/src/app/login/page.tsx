@@ -1,18 +1,16 @@
-// src/app/login/page.tsx (CORREÇÃO FINAL MESMO)
 import { cookies } from 'next/headers' 
 import { createServerClient } from '@supabase/ssr' 
 import { redirect } from 'next/navigation'
+import { HardHat } from 'lucide-react'
 
 export default function Login() {
   
-  // Ação de Login (Server Action)
   const signIn = async (formData: FormData) => {
     'use server' 
 
     const email = formData.get('email') as string
     const password = formData.get('password') as string
     
-    // 1. Chame cookies() UMA VEZ no topo da Server Action
     const cookieStore = cookies() 
     
     const supabase = createServerClient(
@@ -20,7 +18,6 @@ export default function Login() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          // 2. REUSE a variável cookieStore aqui
           get(name: string) {
             return cookieStore.get(name)?.value
           },
@@ -48,22 +45,62 @@ export default function Login() {
   }
 
   return (
-    <div style={{ width: '300px', margin: '100px auto' }}>
-      <h1>Login</h1>
-      <form>
-        <label htmlFor="email">Email:</label>
-        <input id="email" name="email" type="email" required 
-               style={{ width: '100%', border: '1px solid #ccc' }} />
-        
-        <label htmlFor="password">Senha:</label>
-        <input id="password" name="password" type="password" required 
-               style={{ width: '100%', border: '1px solid #ccc' }} />
-        
-        <button formAction={signIn} 
-                style={{ width: '100%', marginTop: '10px', background: 'blue', color: 'white' }}>
-          Entrar
-        </button>
-      </form>
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="w-full max-w-md p-8 space-y-8 bg-card rounded-lg shadow-lg border border-border">
+        <div className="text-center">
+          <HardHat className="mx-auto h-12 w-12 text-primary" />
+          <h1 className="mt-6 text-3xl font-bold tracking-tight text-foreground">
+            Acesse sua conta
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Bem-vindo ao ERP de Locação
+          </p>
+        </div>
+        <form className="space-y-6" action={signIn}>
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-foreground">
+              Email
+            </label>
+            <div className="mt-1">
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="block w-full px-3 py-2 bg-input border border-border rounded-md shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                placeholder="voce@exemplo.com"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-foreground">
+              Senha
+            </label>
+            <div className="mt-1">
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="block w-full px-3 py-2 bg-input border border-border rounded-md shadow-sm placeholder-muted-foreground focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                placeholder="Sua senha"
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-background bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+            >
+              Entrar
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

@@ -1,20 +1,13 @@
-// src/app/dashboard/admin/permissions/page.tsx
-
+import { getRbacData, checkPermission } from './actions'
+import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import { redirect } from 'next/navigation'
-
-// Importa as funções de busca e verificação de permissão
-import { getRbacData, checkPermission, type RbacData } from './actions' 
-// Importa o componente cliente da tabela
 import PermissionTableClient from './permission-table-client'
-
-// ====================================================================
-// COMPONENTE PRINCIPAL (SERVER COMPONENT)
-// ====================================================================
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ShieldAlert } from 'lucide-react'
 
 export default async function PermissionsAdminPage() {
-    // 1. Verificar Autenticação
     const cookieStore = cookies()
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,32 +19,37 @@ export default async function PermissionsAdminPage() {
         return redirect('/login') 
     }
 
-    // 2. Verificar AUTORIZAÇÃO (Permissão específica)
-    // Chamamos a função 'checkPermission' que criamos em actions.ts
     const canManageRoles = await checkPermission('manage:roles') 
     if (!canManageRoles) {
-        // Se o usuário não tem a permissão, redireciona para o dashboard principal
-        // Poderíamos mostrar uma mensagem de "Acesso Negado" também
         return redirect('/dashboard') 
     }
 
-    // 3. Buscar os Dados Iniciais (Roles, Permissions, Relações)
-    // Somente se o usuário passou na verificação acima
     const rbacData = await getRbacData()
 
-
     return (
-        <div className="p-8 space-y-6 bg-gray-100 min-h-screen">
-            <h1 className="text-3xl font-bold text-gray-800 border-b pb-3">
-                Administração - Gestão de Funções e Permissões (RBAC)
-            </h1>
-
-            {/* Renderiza o Componente Cliente, passando os dados */}
-            <PermissionTableClient initialData={rbacData} />
-
-            <div className="mt-6 p-4 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
-                <strong>Atenção:</strong> Alterar permissões pode impactar o acesso dos usuários ao sistema. Tenha certeza das suas alterações antes de salvar.
+        <div className="space-y-8">
+            <div>
+                <h1 className="text-3xl font-bold">Gestão de Permissões</h1>
+                <p className="text-muted-foreground">Controle o que cada função de usuário pode acessar e fazer no sistema.</p>
             </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Matriz de Funções e Permissões</CardTitle>
+                    <CardDescription>Marque as caixas para conceder permissões a uma função. As alterações são salvas por coluna.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <PermissionTableClient initialData={rbacData} />
+                </CardContent>
+            </Card>
+
+            <Alert variant="destructive">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Atenção</AlertTitle>
+                <AlertDescription>
+                    Alterar permissões pode impactar criticamente o acesso dos usuários. Tenha certeza das suas alterações antes de salvar.
+                </AlertDescription>
+            </Alert>
         </div>
     )
 }

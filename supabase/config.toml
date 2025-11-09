@@ -1,4 +1,3 @@
-
 [functions.consulta-cnpj]
 enabled = true
 verify_jwt = true

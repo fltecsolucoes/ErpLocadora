@@ -1,51 +1,35 @@
-// src/app/dashboard/orders/conversion-button-client.tsx
-'use client' // Garante que é um Client Component
+'use client'
 
-import { convertToOS } from './actions' // Precisa importar a Server Action aqui
+import { useState, useTransition } from 'react'
+import { convertToOS } from './actions'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 
-// Cole a função ConversionButton aqui:
 export default function ConversionButtonClient({ quoteId }: { quoteId: string }) {
-    const handleConvert = async () => {
-        const result = await convertToOS(quoteId) 
+    const [isPending, startTransition] = useTransition();
+    const [status, setStatus] = useState<{success: boolean, message: string} | null>(null)
 
-        if (result.success) {
-            alert(result.message)
-        } else {
-            alert(`Erro na Conversão: ${result.message}`)
-        }
+    const handleConvert = async () => {
+        startTransition(async () => {
+            const result = await convertToOS(quoteId)
+            setStatus(result)
+            // Idealmente, usar um toast para notificação
+            if (result.success) {
+                console.log(result.message)
+            } else {
+                console.error(result.message)
+            }
+        });
     }
 
     return (
-        <button 
+        <Button 
             onClick={handleConvert}
-            className="bg-blue-600 text-white px-3 py-1 text-xs rounded hover:bg-blue-700 transition-colors">
-            Converter em OS
-        </button>
-    )
-}
-
-// ====================================================================
-// COMPONENTE CLIENTE: Botão de Conversão (CORRIGIDO)
-// ====================================================================
-function ConversionButton({ quoteId }: { quoteId: string }) {
-    'use client'
-
-    const handleConvert = async () => {
-        // Usa a Server Action para iniciar a conversão no backend
-        const result = await convertToOS(quoteId) 
-        
-        if (result.success) {
-            alert(result.message)
-        } else {
-            alert(`Erro na Conversão: ${result.message}`)
-        }
-    }
-
-    return (
-        <button 
-            onClick={handleConvert}
-            className="bg-blue-600 text-white px-3 py-1 text-xs rounded hover:bg-blue-700 transition-colors">
-            Converter em OS
-        </button>
+            disabled={isPending}
+            size="sm"
+        >
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isPending ? 'Convertendo...' : 'Converter em OS'}
+        </Button>
     )
 }

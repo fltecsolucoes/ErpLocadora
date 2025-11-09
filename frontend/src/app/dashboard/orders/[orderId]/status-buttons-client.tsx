@@ -1,57 +1,57 @@
-// src/app/dashboard/orders/[orderId]/status-buttons-client.tsx
 'use client'
 
-import { useState } from 'react'
+import { useTransition } from 'react'
 import { updateOrderItemStatus } from './actions'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 
-// Define os possíveis status que um item pode ter
 type OrderItemStatus = 'Reserved' | 'CheckedOut' | 'CheckedIn' | 'Cancelled' | 'Lost' | 'Damaged';
 
 interface StatusButtonsProps {
     orderItemId: number;
-    currentStatus: string | null; // O status atual do item vindo do DB
-    orderId: string; // ID da OS para revalidação
+    currentStatus: string | null;
+    orderId: string;
 }
 
 export default function StatusButtonsClient({ orderItemId, currentStatus, orderId }: StatusButtonsProps) {
-    const [isLoading, setIsLoading] = useState(false);
+    const [isPending, startTransition] = useTransition();
 
     const handleUpdateStatus = async (newStatus: OrderItemStatus) => {
-        setIsLoading(true);
-        const result = await updateOrderItemStatus(orderItemId, newStatus, orderId);
-        if (!result.success) {
-            alert(`Erro: ${result.message}`);
-        } else {
-            alert(result.message); // Ou usar uma notificação melhor
-        }
-        setIsLoading(false);
+        startTransition(async () => {
+            const result = await updateOrderItemStatus(orderItemId, newStatus, orderId);
+            if (!result.success) {
+                // Idealmente, usar um toast para notificação de erro
+                console.error(result.message);
+            }
+        });
+    }
+
+    if (currentStatus === 'CheckedIn') {
+        return <span className="text-sm text-green-600 font-medium">Devolvido</span>;
     }
 
     return (
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 justify-end">
             {currentStatus === 'Reserved' && (
-                <button
+                <Button
                     onClick={() => handleUpdateStatus('CheckedOut')}
-                    disabled={isLoading}
-                    className="bg-orange-500 text-white px-2 py-1 text-xs rounded hover:bg-orange-600 disabled:bg-gray-400"
+                    disabled={isPending}
+                    variant="outline"
+                    size="sm"
                 >
-                    {isLoading ? '...' : 'Check-Out'}
-                </button>
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Check-Out'}
+                </Button>
             )}
             {currentStatus === 'CheckedOut' && (
-                <button
+                <Button
                     onClick={() => handleUpdateStatus('CheckedIn')}
-                    disabled={isLoading}
-                    className="bg-green-500 text-white px-2 py-1 text-xs rounded hover:bg-green-600 disabled:bg-gray-400"
+                    disabled={isPending}
+                    variant="default"
+                    size="sm"
                 >
-                    {isLoading ? '...' : 'Check-In'}
-                </button>
-                // Futuro: Adicionar botões para 'Damaged' ou 'Lost' aqui
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Check-In'}
+                </Button>
             )}
-            {currentStatus === 'CheckedIn' && (
-                <span className="text-green-600 text-xs font-semibold">Devolvido</span>
-            )}
-            {/* Adicionar outros status como Cancelled, Lost, etc. se necessário */}
         </div>
     )
 }

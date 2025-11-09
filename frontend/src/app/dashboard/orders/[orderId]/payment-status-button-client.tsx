@@ -1,45 +1,42 @@
-// src/app/dashboard/orders/[orderId]/payment-status-button-client.tsx
 'use client'
 
-import { useState } from 'react'
-import { markPaymentAsPaid } from './finance.actions' // Importa a nova ação
+import { useTransition } from 'react'
+import { markPaymentAsPaid } from './finance.actions'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 
-// Define os possíveis status que um pagamento pode ter (do Enum do DB)
 type PaymentStatus = 'Pending' | 'Paid' | 'Overdue';
 
 interface PaymentButtonProps {
     paymentId: string;
     currentStatus: PaymentStatus | null;
-    orderId: string; // Para revalidação
+    orderId: string;
 }
 
 export default function PaymentStatusButtonClient({ paymentId, currentStatus, orderId }: PaymentButtonProps) {
-    const [isLoading, setIsLoading] = useState(false);
+    const [isPending, startTransition] = useTransition();
 
     const handleMarkAsPaid = async () => {
-        setIsLoading(true);
-        const result = await markPaymentAsPaid(paymentId, orderId);
-        if (!result.success) {
-            alert(`Erro: ${result.message}`);
-        } else {
-            alert(result.message); // Ou usar uma notificação melhor
-        }
-        setIsLoading(false);
+        startTransition(async () => {
+            const result = await markPaymentAsPaid(paymentId, orderId);
+            if (!result.success) {
+                console.error(result.message);
+            }
+        });
     }
 
-    // Se já estiver pago, mostra um texto
     if (currentStatus === 'Paid') {
-        return <span className="text-green-600 text-xs font-semibold">Recebido</span>;
+        return <span className="text-sm text-green-600 font-medium">Recebido</span>;
     }
 
-    // Se estiver pendente (ou atrasado), mostra o botão
     return (
-        <button
+        <Button
             onClick={handleMarkAsPaid}
-            disabled={isLoading}
-            className="bg-emerald-500 text-white px-2 py-1 text-xs rounded hover:bg-emerald-600 disabled:bg-gray-400"
+            disabled={isPending}
+            variant="secondary"
+            size="sm"
         >
-            {isLoading ? '...' : 'Marcar Pago'}
-        </button>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Marcar Pago'}
+        </Button>
     );
 }

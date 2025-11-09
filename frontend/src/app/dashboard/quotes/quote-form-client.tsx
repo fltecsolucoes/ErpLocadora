@@ -1,25 +1,28 @@
-// src/app/dashboard/quotes/quote-form-client.tsx
-
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useTransition, useRef } from 'react'
 import { getQuoteRequirements, checkAvailability, createQuote } from './actions'
 import { Database } from '@/lib/database.types'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table'
+import { Loader2, Trash2, RefreshCw } from 'lucide-react'
 
-// Tipagens (simplificadas para o Client Component)
+// Tipagens
 type ClientRow = Database['public']['Tables']['clients']['Row']
 type ProductRow = Database['public']['Tables']['products']['Row']
 
-// Tipo para os Itens do Orçamento (o carrinho)
 interface QuoteItem {
-    id: number; // ID local (para React keys)
+    id: number;
     product_id: string;
     product_name: string;
     unit_price: number;
     quantity: number;
     start_date: string;
     end_date: string;
-    status?: 'ok' | 'warning' | 'error';
+    status?: 'ok' | 'warning' | 'error' | 'pending';
     status_message?: string;
 }
 
@@ -30,19 +33,23 @@ interface QuoteFormProps {
     };
 }
 
-// ====================================================================
-// COMPONENTE PRINCIPAL DO FORMULÁRIO
-// ====================================================================
+type Status = {
+  type: 'idle' | 'loading' | 'success' | 'error';
+  message: string;
+}
 
 export default function QuoteFormClient({ initialData }: QuoteFormProps) {
     const { clients, products } = initialData;
     
-    // Estado do formulário principal
+    // Estados
     const [selectedClientId, setSelectedClientId] = useState<string>('');
     const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSubmitting, startSubmitTransition] = useTransition();
+    const [isChecking, startCheckTransition] = useTransition();
+    const [checkingItemId, setCheckingItemId] = useState<number | null>(null);
+    const [status, setStatus] = useState<Status>({ type: 'idle', message: '' });
+    const addItemFormRef = useRef<HTMLFormElement>(null);
 
-    // Estado para adicionar um novo item
     const [newItem, setNewItem] = useState({
         productId: '',
         quantity: 1,
@@ -50,309 +57,251 @@ export default function QuoteFormClient({ initialData }: QuoteFormProps) {
         endDate: '',
     });
 
-    // ----------------------------------------------------
-    // FUNÇÕES DE DISPONIBILIDADE
-    // ----------------------------------------------------
-
-    // (CÓDIGO CORRIGIDO que você precisa garantir que esteja no arquivo)
-
-// Linha 57:
+    // Funções de Lógica
     const handleCheckAvailability = async (item: QuoteItem) => {
-        
-        // ----------------------------------------------------
-        // NOVO: 1. Calcule a quantidade já reservada NESTE ORÇAMENTO (os itens antes deste)
-        // ----------------------------------------------------
-        const reservedInQuote = quoteItems
-            // Filtra por itens que têm o mesmo produto E datas que se sobrepõem
-            .filter(i => 
-                i.product_id === item.product_id && 
-                i.id !== item.id && // Exclui o item que está sendo verificado
-                // Simples verificação de sobreposição de datas (para fins de teste)
-                i.end_date >= item.start_date && 
-                i.start_date <= item.end_date
-            )
-            .reduce((sum, i) => sum + i.quantity, 0);
+        setCheckingItemId(item.id);
+        startCheckTransition(async () => {
+            setQuoteItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', status_message: 'Verificando...' } : i));
 
-        // Verifica o estoque total do produto
-        const productTotal = products.find(p => p.id === item.product_id)?.total_quantity || 0;
-        
-        // Verificação de CONSISTÊNCIA INTERNA (se o carrinho excede o estoque físico)
-        if (item.quantity + reservedInQuote > productTotal) {
-             setQuoteItems(prev => prev.map(i => i.id === item.id ? { 
-                ...i, 
-                status: 'error', 
-                status_message: `Estoque Físico Excedido (Máx: ${productTotal})`
-            } : i));
-            return; 
-        }
-        
-        // ----------------------------------------------------
-        // 2. Chame a RPC para verificar reservas de OUTROS ORÇAMENTOS (OS passadas)
-        // ----------------------------------------------------
-        
-        setQuoteItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'warning', status_message: 'Verificando...' } : i));
-        
-        // Passa a quantidade total solicitada NESTE QUOTE para a RPC
-        const totalQuantityToVerify = item.quantity + reservedInQuote;
-        
-        const result = await checkAvailability(
-            item.product_id, 
-            totalQuantityToVerify, 
-            item.start_date, 
-            item.end_date
-        );
+            const reservedInQuote = quoteItems
+                .filter(i => i.product_id === item.product_id && i.id !== item.id && i.end_date >= item.start_date && i.start_date <= item.end_date)
+                .reduce((sum, i) => sum + i.quantity, 0);
 
-        if (result.success) {
-            setQuoteItems(prev => prev.map(i => i.id === item.id ? { 
-                ...i, 
-                status: result.isAvailable ? 'ok' : 'error', 
-                status_message: result.isAvailable 
-                    ? 'Disponível' 
-                    : `Apenas ${result.availableQuantity} livres`
-            } : i));
-        } else {
-            setQuoteItems(prev => prev.map(i => i.id === item.id ? { 
-                ...i, 
-                status: 'error', 
-                status_message: 'Falha na verificação.'
-            } : i));
-        }
+            const productTotal = products.find(p => p.id === item.product_id)?.total_quantity || 0;
+            
+            if (item.quantity + reservedInQuote > productTotal) {
+                 setQuoteItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', status_message: `Estoque Físico Excedido (Máx: ${productTotal})` } : i));
+                 setCheckingItemId(null);
+                 return; 
+            }
+            
+            const totalQuantityToVerify = item.quantity + reservedInQuote;
+            const result = await checkAvailability(item.product_id, totalQuantityToVerify, item.start_date, item.end_date);
+
+            if (result.success) {
+                setQuoteItems(prev => prev.map(i => i.id === item.id ? { 
+                    ...i, 
+                    status: result.isAvailable ? 'ok' : 'error', 
+                    status_message: result.isAvailable ? `Disponível (${result.availableQuantity} livres)` : `Apenas ${result.availableQuantity} livres`
+                } : i));
+            } else {
+                setQuoteItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', status_message: 'Falha na verificação.' } : i));
+            }
+            setCheckingItemId(null);
+        });
     }
 
-    // ----------------------------------------------------
-    // FUNÇÕES DE GERENCIAMENTO DE ITENS
-    // ----------------------------------------------------
-
-    const handleAddItem = () => {
+    const handleAddItem = (e: React.FormEvent) => {
+        e.preventDefault();
         if (!newItem.productId || !newItem.startDate || !newItem.endDate || newItem.quantity <= 0) {
-            return alert('Preencha o produto, quantidade, data inicial e final.');
+            setStatus({type: 'error', message: 'Preencha o produto, quantidade e datas para adicionar.'});
+            return;
         }
 
         const productInfo = products.find(p => p.id === newItem.productId);
         if (!productInfo) return;
 
         const newQuoteItem: QuoteItem = {
-            id: Date.now(), // ID único local
+            id: Date.now(),
             product_id: productInfo.id,
             product_name: productInfo.name,
             unit_price: parseFloat(productInfo.rent_value as unknown as string),
             quantity: newItem.quantity,
             start_date: newItem.startDate,
             end_date: newItem.endDate,
+            status: 'pending',
+            status_message: 'Pendente'
         };
 
         setQuoteItems(prev => [...prev, newQuoteItem]);
-        setNewItem({ productId: '', quantity: 1, startDate: '', endDate: '' });
-        
-        // Verifica a disponibilidade imediatamente
         handleCheckAvailability(newQuoteItem);
+        
+        setNewItem({ productId: '', quantity: 1, startDate: '', endDate: '' });
+        addItemFormRef.current?.reset();
+        setStatus({type: 'idle', message: ''});
     }
 
     const handleRemoveItem = (id: number) => {
         setQuoteItems(prev => prev.filter(item => item.id !== id));
     }
-    
-    // ----------------------------------------------------
-    // FUNÇÃO DE SUBMISSÃO FINAL
-    // ----------------------------------------------------
 
     const handleSubmitQuote = async () => {
-        if (!selectedClientId) return alert('Selecione o cliente primeiro.');
-        if (quoteItems.length === 0) return alert('Adicione pelo menos um item ao orçamento.');
-        
-        // Verifica se há erros de disponibilidade antes de submeter
-        const hasErrors = quoteItems.some(item => item.status === 'error');
-        if (hasErrors) return alert('Corrija os erros de estoque antes de finalizar o orçamento.');
-
-        setIsSubmitting(true);
-        
-        // Mapeia o estado local para o formato de DB
-        const itemsToSubmit = quoteItems.map(item => ({
-            product_id: item.product_id,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            start_date: item.start_date,
-            end_date: item.end_date,
-        }));
-        
-        const result = await createQuote(selectedClientId, itemsToSubmit);
-
-        if (result.success) {
-            alert(result.message);
-            // Limpa o estado após o sucesso
-            setQuoteItems([]);
-            setSelectedClientId('');
-        } else {
-            alert(`Falha na criação do Orçamento: ${result.message}`);
+        if (!selectedClientId) {
+            setStatus({type: 'error', message: 'Selecione o cliente primeiro.'});
+            return;
         }
-        setIsSubmitting(false);
+        if (quoteItems.length === 0) {
+            setStatus({type: 'error', message: 'Adicione pelo menos um item ao orçamento.'});
+            return;
+        }
+        
+        const hasErrors = quoteItems.some(item => item.status === 'error');
+        if (hasErrors) {
+            setStatus({type: 'error', message: 'Corrija os erros de estoque antes de finalizar.'});
+            return;
+        }
+
+        startSubmitTransition(async () => {
+            setStatus({ type: 'loading', message: 'Finalizando orçamento...' });
+            const itemsToSubmit = quoteItems.map(item => ({
+                product_id: item.product_id, quantity: item.quantity, unit_price: item.unit_price,
+                start_date: item.start_date, end_date: item.end_date,
+            }));
+            
+            const result = await createQuote(selectedClientId, itemsToSubmit);
+
+            if (result.success) {
+                setStatus({ type: 'success', message: result.message || 'Orçamento criado com sucesso!' });
+                setQuoteItems([]);
+                setSelectedClientId('');
+            } else {
+                setStatus({ type: 'error', message: `Falha: ${result.message}` });
+            }
+        });
     }
     
-    // ----------------------------------------------------
-    // CÁLCULOS
-    // ----------------------------------------------------
-    
+    // Cálculos
     const totalQuoteValue = useMemo(() => {
         return quoteItems.reduce((total, item) => total + (item.unit_price * item.quantity), 0);
     }, [quoteItems]);
     
     const selectedProduct = products.find(p => p.id === newItem.productId);
 
-    return (
-        <div className="space-y-6">
-            
-            {/* SELEÇÃO DE CLIENTE E BOTÃO FINAL */}
-            <div className="p-4 border rounded shadow-md bg-gray-100 flex justify-between items-center">
-                <div className="flex items-center space-x-4">
-                    <label className="font-bold">Cliente:</label>
-                    <select 
-                        className="p-2 border rounded"
-                        value={selectedClientId}
-                        onChange={(e) => setSelectedClientId(e.target.value)}
-                    >
-                        <option value="">Selecione um Cliente</option>
-                        {clients.map(client => (
-                            <option key={client.id} value={client.id}>{client.name}</option>
-                        ))}
-                    </select>
-                </div>
-                
-                <button 
-                    onClick={handleSubmitQuote} 
-                    disabled={isSubmitting || !selectedClientId || quoteItems.length === 0}
-                    className="bg-purple-600 text-white p-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-400 font-bold">
-                    {isSubmitting ? 'Salvando...' : `FINALIZAR ORÇAMENTO (R$ ${totalQuoteValue.toFixed(2).replace('.', ',')})`}
-                </button>
-            </div>
+    const getStatusColor = (status?: QuoteItem['status']) => {
+        switch (status) {
+            case 'ok': return 'bg-green-100 text-green-800';
+            case 'error': return 'bg-red-100 text-red-800';
+            case 'warning': return 'bg-yellow-100 text-yellow-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    }
 
-            {/* ADICIONAR NOVO ITEM */}
-            <div className="p-4 border rounded shadow-md space-y-4 bg-white text-black">
-                <h3 className="text-lg font-bold">Adicionar Item</h3>
-                <div className="grid grid-cols-6 gap-3 items-end">
-                    
-                    {/* Produto */}
-                    <div className="col-span-2">
-                        <label className="block text-sm font-medium">Produto</label>
-                        <select 
-                            className="w-full p-2 border rounded"
-                            value={newItem.productId}
-                            onChange={(e) => setNewItem(prev => ({ ...prev, productId: e.target.value }))}
-                        >
-                            <option value="">Selecione...</option>
-                            {products.map(p => (
-                                <option key={p.id} value={p.id}>
-                                    {p.name} (R$ {parseFloat(p.rent_value as unknown as string).toFixed(2).replace('.', ',')})
-                                </option>
+    return (
+        <div className="space-y-8">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Adicionar Item</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <form ref={addItemFormRef} onSubmit={handleAddItem} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                            <div className="md:col-span-2 space-y-2">
+                                <Label htmlFor="product">Produto</Label>
+                                <select id="product" value={newItem.productId} onChange={(e) => setNewItem(prev => ({ ...prev, productId: e.target.value }))}
+                                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                                    <option value="">Selecione...</option>
+                                    {products.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="quantity">Qtd</Label>
+                                <Input id="quantity" type="number" min="1" value={newItem.quantity} onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="start_date">Início</Label>
+                                <Input id="start_date" type="date" value={newItem.startDate} onChange={(e) => setNewItem(prev => ({ ...prev, startDate: e.target.value }))} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="end_date">Fim</Label>
+                                <Input id="end_date" type="date" value={newItem.endDate} onChange={(e) => setNewItem(prev => ({ ...prev, endDate: e.target.value }))} />
+                            </div>
+                        </div>
+                        <Button type="submit" className="w-full">Adicionar ao Orçamento</Button>
+                    </form>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Itens do Orçamento</CardTitle>
+                    <CardDescription>Total de {quoteItems.length} itens.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Produto</TableHead>
+                                <TableHead>Período</TableHead>
+                                <TableHead>Qtd</TableHead>
+                                <TableHead>Preço (Un)</TableHead>
+                                <TableHead>Subtotal</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {quoteItems.length === 0 ? (
+                                <TableRow><TableCell colSpan={7} className="h-24 text-center">Nenhum item adicionado.</TableCell></TableRow>
+                            ) : (
+                                quoteItems.map(item => (
+                                    <TableRow key={item.id} className={item.status === 'error' ? 'bg-destructive/10' : ''}>
+                                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                                        <TableCell className="text-muted-foreground text-xs">{new Date(item.start_date + 'T00:00:00').toLocaleDateString('pt-BR')} até {new Date(item.end_date + 'T00:00:00').toLocaleDateString('pt-BR')}</TableCell>
+                                        <TableCell>{item.quantity}</TableCell>
+                                        <TableCell>R$ {item.unit_price.toFixed(2).replace('.', ',')}</TableCell>
+                                        <TableCell className="font-medium">R$ {(item.unit_price * item.quantity).toFixed(2).replace('.', ',')}</TableCell>
+                                        <TableCell>
+                                            <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(item.status)}`}>
+                                                {item.status_message}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="ghost" size="icon" onClick={() => handleCheckAvailability(item)} disabled={isChecking && checkingItemId === item.id}>
+                                                {isChecking && checkingItemId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                        <TableFooter>
+                            <TableRow>
+                                <TableCell colSpan={6} className="text-right font-bold text-lg">Total do Orçamento</TableCell>
+                                <TableCell className="text-right font-bold text-lg">R$ {totalQuoteValue.toFixed(2).replace('.', ',')}</TableCell>
+                            </TableRow>
+                        </TableFooter>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Cliente e Finalização</CardTitle>
+                    <CardDescription>Selecione o cliente e salve o orçamento.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                     <div className="space-y-2">
+                        <Label htmlFor="client">Cliente</Label>
+                        <select id="client" value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)}
+                            className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                            <option value="">Selecione um Cliente</option>
+                            {clients.map(client => (
+                                <option key={client.id} value={client.id}>{client.name}</option>
                             ))}
                         </select>
                     </div>
-
-                    {/* Quantidade e Valor Unitário */}
-                    <div>
-                        <label className="block text-sm font-medium">Qtd</label>
-                        <input 
-                            type="number" 
-                            min="1"
-                            value={newItem.quantity}
-                            onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                            className="w-full p-2 border rounded" 
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium">Valor Unit.</label>
-                        <input 
-                            readOnly
-                            value={selectedProduct ? `R$ ${parseFloat(selectedProduct.rent_value as unknown as string).toFixed(2).replace('.', ',')}` : 'N/A'}
-                            className="w-full p-2 border rounded bg-gray-200"
-                        />
-                    </div>
-                    
-                    {/* Datas */}
-                    <div>
-                        <label className="block text-sm font-medium">Início</label>
-                        <input 
-                            type="date" 
-                            value={newItem.startDate}
-                            onChange={(e) => setNewItem(prev => ({ ...prev, startDate: e.target.value }))}
-                            className="w-full p-2 border rounded" 
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium">Fim</label>
-                        <input 
-                            type="date" 
-                            value={newItem.endDate}
-                            onChange={(e) => setNewItem(prev => ({ ...prev, endDate: e.target.value }))}
-                            className="w-full p-2 border rounded" 
-                        />
-                    </div>
-
-                </div>
-                <button 
-                    type="button" 
-                    onClick={handleAddItem}
-                    className="bg-green-600 text-white p-2 rounded hover:bg-green-700 w-full">
-                    Adicionar ao Orçamento
-                </button>
-            </div>
-
-            {/* LISTAGEM DE ITENS E STATUS DE ESTOQUE */}
-            <h3 className="text-lg font-bold">Itens do Orçamento</h3>
-            {quoteItems.length === 0 ? (
-                <p className="text-gray-500">Nenhum item adicionado.</p>
-            ) : (
-                <div className="overflow-x-auto border rounded">
-                    <table className="min-w-full divide-y divide-gray-200 bg-white text-black">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Produto</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Qtd</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Preço (Un)</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Período</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Status Estoque</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Total</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium">Ação</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {quoteItems.map(item => (
-                                <tr key={item.id} className={item.status === 'error' ? 'bg-red-100' : 'bg-white'}>
-                                    <td className="px-4 py-2 whitespace-nowrap">{item.product_name}</td>
-                                    <td className="px-4 py-2 whitespace-nowrap">{item.quantity}</td>
-                                    <td className="px-4 py-2 whitespace-nowrap">R$ {item.unit_price.toFixed(2).replace('.', ',')}</td>
-                                    <td className="px-4 py-2 whitespace-nowrap text-xs">
-                                        {item.start_date} <br/> até {item.end_date}
-                                    </td>
-                                    <td className="px-4 py-2 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${item.status === 'ok' ? 'bg-green-100 text-green-800' : item.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
-                                            {item.status_message || 'Pendente'}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-2 whitespace-nowrap font-bold">R$ {(item.unit_price * item.quantity).toFixed(2).replace('.', ',')}</td>
-                                    <td className="px-4 py-2 whitespace-nowrap text-sm">
-                                        <button 
-                                            onClick={() => handleRemoveItem(item.id)}
-                                            className="text-red-600 hover:text-red-900 ml-2">
-                                            Remover
-                                        </button>
-                                        <button 
-                                            onClick={() => handleCheckAvailability(item)}
-                                            className="text-blue-600 hover:text-blue-900 ml-2">
-                                            Verificar
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {/* LINHA DE TOTAL */}
-                            <tr>
-                                <td colSpan={5} className="px-4 py-2 text-right font-bold bg-gray-50">VALOR TOTAL:</td>
-                                <td className="px-4 py-2 font-bold bg-gray-50">R$ {totalQuoteValue.toFixed(2).replace('.', ',')}</td>
-                                <td className="px-4 py-2 bg-gray-50"></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                     {status.type !== 'idle' && (
+                         <p className={`text-sm text-center font-medium ${
+                            status.type === 'error' ? 'text-destructive' :
+                            status.type === 'success' ? 'text-green-500' :
+                            'text-muted-foreground'
+                        }`}>
+                            {status.message}
+                        </p>
+                    )}
+                </CardContent>
+                <CardFooter>
+                    <Button onClick={handleSubmitQuote} className="w-full" size="lg" disabled={isSubmitting || !selectedClientId || quoteItems.length === 0}>
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isSubmitting ? 'Salvando...' : `Finalizar Orçamento (R$ ${totalQuoteValue.toFixed(2).replace('.', ',')})`}
+                    </Button>
+                </CardFooter>
+            </Card>
         </div>
     );
 }

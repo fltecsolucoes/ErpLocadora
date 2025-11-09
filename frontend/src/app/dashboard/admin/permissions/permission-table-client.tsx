@@ -1,125 +1,112 @@
-// src/app/dashboard/admin/permissions/permission-table-client.tsx
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { updateRolePermissions, type RbacData } from './actions' // Importa a ação de salvar
+import React, { useState, useEffect, useTransition } from 'react'
+import { updateRolePermissions, type RbacData } from './actions'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 
-// Define as propriedades que este componente recebe
 interface PermissionTableProps {
-    initialData: RbacData; // Os dados buscados pelo Server Component
+    initialData: RbacData;
 }
 
-// Define um tipo para o estado local que gerencia os checkboxes
-// Ex: { roleId1: [permissionId1, permissionId3], roleId2: [permissionId2] }
 type RolePermissionState = {
-    [roleId: number]: number[]; // Mapeia ID da Role para um array de IDs de Permissão
+    [roleId: number]: number[];
 }
 
 export default function PermissionTableClient({ initialData }: PermissionTableProps) {
     const { roles, permissions, rolePermissions } = initialData;
 
-    // Estado local para gerenciar os checkboxes marcados para cada role
     const [checkedState, setCheckedState] = useState<RolePermissionState>({});
-    // Estado para feedback de salvamento
-    const [savingStates, setSavingStates] = useState<{ [roleId: number]: boolean }>({});
+    const [isPending, startTransition] = useTransition();
+    const [savingRoleId, setSavingRoleId] = useState<number | null>(null);
 
-    // Efeito para inicializar o estado dos checkboxes com base nos dados recebidos
     useEffect(() => {
         const initialState: RolePermissionState = {};
         roles.forEach(role => {
-            // Filtra as permissões existentes para esta role específica
             initialState[role.id] = rolePermissions
                 .filter(rp => rp.role_id === role.id)
                 .map(rp => rp.permission_id);
         });
         setCheckedState(initialState);
-    }, [roles, rolePermissions]); // Re-executa se os dados mudarem
+    }, [roles, rolePermissions]);
 
-    // Função chamada quando um checkbox é clicado
-    const handleCheckboxChange = (roleId: number, permissionId: number, isChecked: boolean) => {
+    const handleCheckboxChange = (roleId: number, permissionId: number) => {
         setCheckedState(prevState => {
             const currentPermissions = prevState[roleId] || [];
+            const isChecked = currentPermissions.includes(permissionId);
+            
             if (isChecked) {
-                // Adiciona a permissão se não estiver lá
-                return { ...prevState, [roleId]: [...currentPermissions, permissionId] };
-            } else {
-                // Remove a permissão
                 return { ...prevState, [roleId]: currentPermissions.filter(id => id !== permissionId) };
+            } else {
+                return { ...prevState, [roleId]: [...currentPermissions, permissionId] };
             }
         });
     }
 
-    // Função chamada ao clicar no botão "Salvar" de uma role
     const handleSaveChanges = async (roleId: number) => {
-        setSavingStates(prev => ({ ...prev, [roleId]: true })); // Ativa o estado de "salvando"
+        setSavingRoleId(roleId);
+        startTransition(async () => {
+            const permissionIdsToSave = checkedState[roleId] || [];
+            const result = await updateRolePermissions(roleId, permissionIdsToSave);
 
-        const permissionIdsToSave = checkedState[roleId] || [];
-        const result = await updateRolePermissions(roleId, permissionIdsToSave);
-
-        if (result.success) {
-            alert(result.message); // Idealmente usar um Toast
-        } else {
-            alert(`Erro ao salvar: ${result.message}`);
-            // Poderíamos reverter o estado aqui se o salvamento falhar
-        }
-        setSavingStates(prev => ({ ...prev, [roleId]: false })); // Desativa o "salvando"
+            if (!result.success) {
+                // Idealmente, usar um toast para notificação de erro
+                alert(`Erro: ${result.message}`);
+            }
+            setSavingRoleId(null);
+        });
     }
 
-    // Renderização da Tabela/Matriz
     return (
-        <div className="overflow-x-auto bg-white text-gray-800 p-4 rounded shadow-md border">
-            <h2 className="text-xl font-semibold mb-4">Matriz de Permissões</h2>
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Permissão</th>
-                        {/* Cria uma coluna para cada Role */}
+        <div className="border rounded-lg overflow-hidden">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="w-[250px]">Permissão</TableHead>
                         {roles.map(role => (
-                            <th key={role.id} className="px-4 py-2 text-center font-medium text-gray-600">
+                            <TableHead key={role.id} className="text-center">
                                 {role.name}
-                            </th>
+                            </TableHead>
                         ))}
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {/* Cria uma linha para cada Permissão */}
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
                     {permissions.map(permission => (
-                        <tr key={permission.id}>
-                            <td className="px-4 py-2 font-medium">{permission.slug}</td>
-                            {/* Cria um checkbox para cada combinação Role x Permissão */}
+                        <TableRow key={permission.id}>
+                            <TableCell className="font-medium">{permission.slug}</TableCell>
                             {roles.map(role => (
-                                <td key={`${role.id}-${permission.id}`} className="px-4 py-2 text-center">
-                                    <input
-                                        type="checkbox"
-                                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                                        // Verifica se a permissão está no estado 'checkedState' para esta role
+                                <TableCell key={`${role.id}-${permission.id}`} className="text-center">
+                                    <Checkbox
                                         checked={checkedState[role.id]?.includes(permission.id) || false}
-                                        // Atualiza o estado quando o checkbox muda
-                                        onChange={(e) => handleCheckboxChange(role.id, permission.id, e.target.checked)}
+                                        onCheckedChange={() => handleCheckboxChange(role.id, permission.id)}
+                                        id={`check-${role.id}-${permission.id}`}
                                     />
-                                </td>
+                                </TableCell>
                             ))}
-                        </tr>
+                        </TableRow>
                     ))}
-                </tbody>
-                {/* Rodapé com Botões de Salvar */}
+                </TableBody>
                 <tfoot>
-                    <tr className="bg-gray-50">
-                        <td className="px-4 py-3 text-left font-medium text-gray-600">Ações</td>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableCell className="font-medium">Ações</TableCell>
                         {roles.map(role => (
-                            <td key={`save-${role.id}`} className="px-4 py-3 text-center">
-                                <button
+                            <TableCell key={`save-${role.id}`} className="text-center">
+                                <Button
+                                    size="sm"
                                     onClick={() => handleSaveChanges(role.id)}
-                                    disabled={savingStates[role.id]} // Desabilita enquanto salva
-                                    className="bg-green-600 text-white px-3 py-1 text-xs rounded hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+                                    disabled={isPending && savingRoleId === role.id}
                                 >
-                                    {savingStates[role.id] ? 'Salvando...' : 'Salvar'}
-                                </button>
-                            </td>
+                                    {isPending && savingRoleId === role.id ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</>
+                                    ) : 'Salvar'}
+                                </Button>
+                            </TableCell>
                         ))}
-                    </tr>
+                    </TableRow>
                 </tfoot>
-            </table>
+            </Table>
         </div>
     )
 }

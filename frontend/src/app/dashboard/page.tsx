@@ -1,84 +1,66 @@
-// src/app/dashboard/page.tsx (CORREÇÃO FINAL MESMO)
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { redirect } from 'next/navigation'
-import { type CookieOptions } from '@supabase/ssr' 
+import { getDashboardKpis, getRecentActivity, getUpcomingReturns } from './actions';
+import { KpiCard } from '@/components/dashboard/kpi-card';
+import { RecentActivityFeed } from '@/components/dashboard/recent-activity-feed';
+import { UpcomingReturnsList } from '@/components/dashboard/upcoming-returns-list';
+import { DollarSign, Users, ClipboardList, Package } from 'lucide-react';
 
 export default async function Dashboard() {
-  
-  // 1. Chame cookies() UMA VEZ no topo.
-  const cookieStore = cookies()
+  const [kpis, recentActivity, upcomingReturns] = await Promise.all([
+    getDashboardKpis(),
+    getRecentActivity(),
+    getUpcomingReturns()
+  ]);
 
-  // 2. Crie o cliente Supabase
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        // 3. REUSE a variável cookieStore aqui
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          cookieStore.set(name, value, options)
-        },
-        remove(name: string, options: CookieOptions) {
-          cookieStore.set(name, '', options)
-        },
-      },
-    }
-  )
+  const kpiData = [
+    { 
+      title: "Faturamento (Mês)", 
+      value: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(kpis.monthlyRevenue), 
+      icon: DollarSign, 
+      description: "Receita de pagamentos confirmados." 
+    },
+    { 
+      title: "Novos Clientes (Mês)", 
+      value: `+${kpis.newClients}`, 
+      icon: Users, 
+      description: "Clientes cadastrados no mês atual." 
+    },
+    { 
+      title: "OS Ativas", 
+      value: kpis.activeOrders.toString(), 
+      icon: ClipboardList, 
+      description: "Ordens de serviço em andamento." 
+    },
+    { 
+      title: "Itens em Locação", 
+      value: kpis.checkedOutItems.toString(), 
+      icon: Package, 
+      description: "Total de itens com status 'Check-Out'." 
+    },
+  ];
 
-  // 4. Tenta pegar a sessão do usuário
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // 5. Se não houver usuário, protege a rota
-  if (!user) {
-    return redirect('/login') 
-  }
-
-  // 6. Ação de Logout (Server Action)
-  const signOut = async () => {
-    'use server'
-
-    // Chame cookies() UMA VEZ no topo da Server Action
-    const cookieStore = cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set(name, value, options)
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.set(name, '', options)
-          },
-        },
-      }
-    )
-    await supabase.auth.signOut()
-    return redirect('/login')
-  }
-
-
-  // 7. Se houver usuário, mostra a página
   return (
-    <div style={{ width: '300px', margin: '100px auto' }}>
-      <h1>Dashboard (Protegido)</h1>
-      <p>Olá, {user.email}</p>
-      
-      <form>
-        <button formAction={signOut}
-                style={{ width: '100%', background: 'red', color: 'white' }}>
-          Sair
-        </button>
-      </form>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-muted-foreground">Visão geral do seu negócio em tempo real.</p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {kpiData.map((kpi) => (
+          <KpiCard
+            key={kpi.title}
+            title={kpi.title}
+            value={kpi.value}
+            icon={kpi.icon}
+            description={kpi.description}
+          />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <RecentActivityFeed activities={recentActivity} />
+        <UpcomingReturnsList returns={upcomingReturns} />
+      </div>
     </div>
   )
 }
